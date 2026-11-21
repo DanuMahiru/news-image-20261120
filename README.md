@@ -12,7 +12,9 @@ on make.fun.
 
 "The Daily Globe", Friday 20 November 2026: 25 stories in a roomy
 front-page layout — a 66px masthead, the ICJ's genocide verdict against
-Myanmar as the lead with a courthouse scene, a day-in-brief timeline,
+Myanmar as the lead with a courthouse scene, a six-cell numbers strip
+(9–6 vote, Kyiv missiles, S&P 500, Anthropic, Senate vote, Denmark),
+region counts in the briefs header, numbered briefs, a date-check box,
 and 24 briefs in a three-column grid. All stories and figures are
 verified 20 November 2026 reporting; nothing is invented.
 

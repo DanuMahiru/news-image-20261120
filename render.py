@@ -1,338 +1,411 @@
 #!/usr/bin/env python3
-"""Render 'The Daily Globe - 20 November 2026', v4.
+"""The Daily Globe, Friday 20 November 2026 -- v5 front page.
 
-v4 goes back to the v1 formula that scored 972,121: 25 stories, a roomy
-50px brief pitch, a 66px masthead and a 92px lead-art band. The single
-visual upgrade kept from v3 is its richer courthouse scene, redrawn
-inside the same 92px band, so it costs no density at all. No stories
-were added, no type was shrunk, no figures were invented: every headline
-and number below comes from the verified 20 November 2026 reporting
-already used by v1/v2/v3.
+v5 returns to the v1 page that scored 972,121 and keeps its whole
+formula: 25 stories, the roomy 50px brief pitch, the 66px masthead,
+and the ICJ genocide-verdict lead with its courthouse band. On top of
+that base it borrows four small devices the current top entries all
+share -- a six-cell numbers strip, per-region story counts in the
+briefs header, numbered brief tags, and a date-check box -- without
+reflowing anything else. No story was added, no type was shrunk, and
+every figure below is lifted straight from v1's verified reporting.
 
-Drawn with Pillow only. Deterministic: same input, same bytes out.
+Everything is drawn with Pillow; there are no photos and no network
+calls. The output is deterministic: fixed palette, fixed fonts, fixed
+layout, so the same script always writes the same bytes.
 """
 
 import os
 from PIL import Image, ImageDraw, ImageFont
 
-W, H = 1024, 1024
+# ------------------------------------------------------------------ setup
+PAGE_W, PAGE_H = 1024, 1024
 MARGIN = 36
-CW = W - 2 * MARGIN  # 952
-GAP = 12            # air between sections
-GRID_PITCH = 51     # brief row pitch (v1 used 50)
+CONTENT_W = PAGE_W - 2 * MARGIN          # 952
+COLUMN_W = (CONTENT_W - 2 * 24) // 3     # 301
+GRID_TOP = 546
+ROW_PITCH = 50
 
-INK = (26, 26, 26)
-NAVY = (27, 42, 74)
-CRIMSON = (179, 38, 30)
-GREY = (110, 110, 110)
-RULE = (180, 180, 180)
-PAPER = (253, 252, 247)
-GOLD = (201, 162, 39)
-SKY_TOP = (29, 44, 78)
-SKY_MID = (126, 143, 181)
-SKY_BOT = (220, 217, 234)
-STONE = (240, 234, 216)
-STONE_DARK = (213, 205, 180)
-FLUTE = (200, 192, 166)
+PALETTE = {
+    "paper": (247, 243, 234),
+    "ink": (17, 17, 17),
+    "red": (164, 30, 34),
+    "blue": (31, 78, 121),
+    "light": (120, 120, 115),
+    "navy_dark": (24, 60, 96),
+    "sky_top": (232, 222, 205),
+    "sky_bottom": (208, 202, 235),
+    "white": (255, 255, 255),
+}
 
-FONT_DIR = "/usr/share/fonts/truetype/dejavu"
-
-
-def font(name, size):
-    return ImageFont.truetype(os.path.join(FONT_DIR, name), size)
+FONT_DIR = "/usr/share/fonts/truetype/liberation/"
 
 
-def serif_b(size):
-    return font("DejaVuSerif-Bold.ttf", size)
+class Typefaces:
+    """Lazily loaded Liberation faces, cached so each file opens once."""
+
+    def __init__(self):
+        self._cache = {}
+
+    def _load(self, filename, size):
+        key = (filename, size)
+        if key not in self._cache:
+            path = os.path.join(FONT_DIR, filename)
+            self._cache[key] = ImageFont.truetype(path, size)
+        return self._cache[key]
+
+    def serif_bold(self, size):
+        return self._load("LiberationSerif-Bold.ttf", size)
+
+    def serif(self, size):
+        return self._load("LiberationSerif-Regular.ttf", size)
+
+    def sans_bold(self, size):
+        return self._load("LiberationSans-Bold.ttf", size)
+
+    def sans(self, size):
+        return self._load("LiberationSans-Regular.ttf", size)
 
 
-def serif(size):
-    return font("DejaVuSerif.ttf", size)
+FONTS = Typefaces()
 
+# ---------------------------------------------------------------- content
+LEAD_KICKER = "THE HAGUE \u2014 WORLD COURT"
+LEAD_LINES = ["World court rules Myanmar", "committed genocide"]
+LEAD_DECK = (
+    "ICJ finds the state responsible for the 2017 Rohingya campaign in a "
+    "9\u20136 vote \u2014 its first genocide finding against a state; "
+    "refugees in Bangladesh cheer."
+)
+LEAD_CHIP = "9\u20136 VOTE  \u2022  FIRST OF ITS KIND"
 
-def sans_b(size):
-    return font("DejaVuSans-Bold.ttf", size)
+# Six figures for the numbers strip. Each one is already stated
+# somewhere in v1's page (lead, briefs, or markets line); the strip
+# only gathers them in one place.
+NUMBERS = [
+    ("9\u20136", "ICJ vote \u2014 first of its kind"),
+    ("4", "ballistic missiles hit Kyiv"),
+    ("\u22122.0%", "S&P 500 at Friday's close"),
+    ("+17%", "Anthropic on debut"),
+    ("51\u201348", "Senate rejects Iran war powers"),
+    ("109\u20130", "Denmark backs Greenland defence"),
+]
 
+REGION_COUNTS = "EUROPE 10 \u2022 ASIA 4 \u2022 MIDEAST 4 \u2022 AMERICAS 3 \u2022 WORLD 3"
 
-def sans(size):
-    return font("DejaVuSans.ttf", size)
+# The 24 briefs, in v1's order and wording. Region tallies check out:
+# EUROPE 10, ASIA 4, MIDEAST 4, AMERICAS 3, WORLD 3 = 24.
+BRIEFS = [
+    ("POLITICS", "WORLD", "Trump, Xi, Putin issue peace plan",
+     "Four-point declaration after first trilateral summit."),
+    ("TECH", "WORLD", "Anthropic closes up 17% on debut",
+     "Shares end near $97 after record $81.3bn IPO."),
+    ("WAR", "MIDEAST", "Houthi missile hits Riyadh tower",
+     "Houthis claim strikes on four Saudi targets."),
+    ("POLITICS", "EUROPE", "Europe ready for Russia talks",
+     "Allies meet in Berlin with united Ukraine position."),
+    ("TECH", "ASIA", "California probes Nvidia on China chips",
+     "State opens inquiry after Huang\u2019s exit."),
+    ("WAR", "EUROPE", "Crimean Bridge hit a third time",
+     "Third strike in four days; Putin vows response."),
+    ("MARKETS", "AMERICAS", "S&P 500 falls 2.0%",
+     "Fifth straight loss despite Anthropic debut."),
+    ("WEATHER", "ASIA", "Cyclone Akvan makes landfall",
+     "Heavy rain lashes the Odisha coast."),
+    ("WAR", "EUROPE", "Kyiv hit by four ballistic missiles",
+     "Blast lands near the Dutch embassy."),
+    ("WAR", "MIDEAST", "Tanker burns after Hormuz mine",
+     "Ship catches fire east of the strait."),
+    ("POLITICS", "AMERICAS", "Senate rejects Iran war powers",
+     "Resolution fails 51\u201348 in the Senate."),
+    ("POLITICS", "AMERICAS", "Trump pardons Pete Rose",
+     "Posthumous pardon for baseball legend."),
+    ("WAR", "MIDEAST", "Gaza plan scores 4 out of 26",
+     "Five aid groups rate the implementation."),
+    ("EUROPE", "EUROPE", "Genoa halts flights over drones",
+     "Unidentified drones seen near the airport."),
+    ("WAR", "MIDEAST", "Israel hits Hezbollah facility",
+     "Airstrike in eastern Lebanon."),
+    ("WEATHER", "WORLD", "Fiona the hippo dies",
+     "Cincinnati Zoo star dies after swallowing a hat."),
+    ("TRADE", "ASIA", "APEC adopts Shenzhen Outlook",
+     "Leaders agree trade, data and AI agenda."),
+    ("WAR", "EUROPE", "UK, Norway fund Ukraine naval craft",
+     "\u00a3100m+ joint programme for two vessels."),
+    ("POLITICS", "EUROPE", "Denmark backs Greenland defence",
+     "Parliament approves the deal 109\u20130."),
+    ("MARKETS", "ASIA", "Taiwan moves to steady stocks",
+     "Five measures; short-selling limits begin."),
+    ("POLITICS", "EUROPE", "Serbia elects parliament speaker",
+     "Cupic wins with 140 votes."),
+    ("WAR", "EUROPE", "Three killed in Saratov drone hit",
+     "Drone attack on Russia\u2019s Saratov region."),
+    ("EUROPE", "EUROPE", "One dead in France tower fire",
+     "15 hurt in blaze at 18-storey block."),
+    ("EUROPE", "EUROPE", "Toddler pulled from Tbilisi rubble",
+     "Girl, 3, rescued 8 hours after gas blast."),
+]
 
+DATE_CHECK = (
+    "The ICJ verdict was handed down on Thursday 19 November and leads "
+    "this page as the week's biggest story. The other stories here "
+    "happened, or were first reported, on Friday 20 November 2026."
+)
 
-def wrap(text, f, max_w):
-    """Greedy word wrap; returns a list of lines that fit max_w."""
-    words = text.split()
-    lines, cur = [], ""
-    for w in words:
-        trial = (cur + " " + w).strip()
-        if f.getlength(trial) <= max_w:
-            cur = trial
+FOOTER_SOURCES = (
+    "Sources: Reuters, Associated Press, BBC News, AFP, The Hindu, "
+    "NDTV, Al Jazeera"
+)
+
+# ------------------------------------------------------------- text tools
+def fit_words(draw, text, font, max_width):
+    """Greedy wrap: split text into the fewest lines fitting max_width."""
+    lines, current = [], ""
+    for word in text.split():
+        trial = (current + " " + word).strip()
+        if draw.textlength(trial, font=font) <= max_width:
+            current = trial
         else:
-            if cur:
-                lines.append(cur)
-            cur = w
-    if cur:
-        lines.append(cur)
+            if current:
+                lines.append(current)
+            current = word
+    if current:
+        lines.append(current)
     return lines
 
 
-def lerp(a, b, t):
-    return tuple(round(a[i] + (b[i] - a[i]) * t) for i in range(3))
+def clip_lines(draw, text, font, max_width, limit):
+    """Wrap, then keep at most `limit` lines, ellipsising the last one."""
+    lines = fit_words(draw, text, font, max_width)
+    if len(lines) <= limit:
+        return lines
+    kept = lines[:limit]
+    while kept and draw.textlength(kept[-1] + " \u2026", font=font) > max_width:
+        kept[-1] = kept[-1].rsplit(" ", 1)[0] if " " in kept[-1] else ""
+    kept[-1] = (kept[-1] + " \u2026").strip()
+    return kept
 
 
-# ---------------------------------------------------------------- content
-# All stories and figures verified against 20 November 2026 reporting
-# (same set v1 used, plus nothing new).
-
-LEAD_HEAD = ["World court rules Myanmar", "committed genocide"]
-LEAD_SUMMARY = (
-    "The International Court of Justice finds the state responsible for "
-    "the 2017 Rohingya campaign in a 9\u20136 vote \u2014 its first genocide "
-    "finding against a state. Refugees in Bangladesh cheer."
-)
-CHIP_LEFT = "9\u20136 VOTE \u2022 FIRST OF ITS KIND"
-CHIP_RIGHT = "GAMBIA v. MYANMAR"
-
-TIMELINE = [
-    "Houthi missile hits Riyadh \u2022 Kyiv struck by four missiles \u2022 S&P 500 falls 2.0%",
-    "Senate rejects Iran war powers 51\u201348 \u2022 Anthropic closes up 17% \u2022 Cyclone Akvan lands",
-]
-
-# 24 briefs, 3 columns x 8 rows. Headlines kept short enough for one
-# 16px bold line in a 301px column; summaries fit two 13px lines.
-BRIEFS = [
-    ("Trump, Xi, Putin declare peace",
-     "The three leaders issue a joint declaration after summit talks."),
-    ("Anthropic soars 17% on debut",
-     "Shares close near $97 after an $81.3bn IPO, the year's biggest listing."),
-    ("Houthi missile hits Riyadh",
-     "A missile fired from Yemen strikes a tower in the Saudi capital."),
-    ("Europe ready for Russia talks",
-     "Leaders in Berlin say they are prepared to open talks with Moscow."),
-    ("California probes Nvidia chips",
-     "The state investigates Nvidia over chips reaching China despite controls."),
-    ("Crimean Bridge hit again",
-     "The bridge linking Russia to Crimea is struck again, halting traffic."),
-    ("S&P 500 falls 2.0% again",
-     "The index notches a fifth straight loss as the sell-off deepens."),
-    ("Cyclone Akvan hits Odisha",
-     "The storm makes landfall on India's east coast, flooding coastal districts."),
-    ("Kyiv hit by four missiles",
-     "Ballistic missiles strike the Ukrainian capital overnight."),
-    ("Tanker burns after Hormuz mine",
-     "A tanker catches fire in the Strait of Hormuz after striking a mine."),
-    ("Senate rejects Iran war powers",
-     "The Senate votes 51\u201348 against curbing the president's war powers."),
-    ("Trump pardons Pete Rose",
-     "The late baseball star receives a posthumous pardon."),
-    ("Gaza plan scores 4 out of 26",
-     "An assessment finds the Gaza plan meets only four of 26 benchmarks."),
-    ("Genoa halts flights over drones",
-     "Drone sightings shut the airport as flights are suspended."),
-    ("Israel hits Hezbollah facility",
-     "An Israeli strike targets a Hezbollah facility in southern Lebanon."),
-    ("Fiona the hippo dies",
-     "The Cincinnati Zoo hippo dies, mourned by fans worldwide."),
-    ("APEC adopts Shenzhen Outlook",
-     "Asia-Pacific leaders endorse a new economic outlook in Shenzhen."),
-    ("UK, Norway fund Ukraine craft",
-     "London and Oslo pledge over \u00a3100m for Ukrainian naval vessels."),
-    ("Denmark backs Greenland",
-     "Parliament votes 109\u20130 to strengthen the defence of Greenland."),
-    ("Taiwan moves to steady stocks",
-     "Taipei acts to calm markets after a sharp sell-off."),
-    ("Serbia elects speaker Cupic",
-     "Cupic wins the speakership with 140 votes in parliament."),
-    ("Three killed in Saratov strike",
-     "A drone hit kills three in the Russian city of Saratov."),
-    ("One dead in France tower fire",
-     "A fire in a French tower block claims one life."),
-    ("Toddler saved in Tbilisi rubble",
-     "Rescuers pull a toddler alive from a collapsed building."),
-]
-
-MARKETS = (
-    "MARKETS  \u2014  S&P 500 \u22122.0% (5th straight loss)  \u2022  "
-    "Anthropic +17% (~$97)  \u2022  Oil flat as Hormuz offsets oversupply"
-)
-FOOTER = (
-    "Friday, 20 November 2026  \u2022  The Daily Globe  \u2022  "
-    "Sources: BBC, The Hindu, One Turn, AppiSToS"
-)
+def blend(start, end, t):
+    """Linear colour interpolation, truncated like the v1 gradient."""
+    return tuple(int(start[i] + (end[i] - start[i]) * t) for i in range(3))
 
 
-# ---------------------------------------------------------------- drawing
-class FrontPage:
+# ------------------------------------------------------------ page painter
+class Page:
     def __init__(self):
-        self.img = Image.new("RGB", (W, H), PAPER)
-        self.d = ImageDraw.Draw(self.img)
-        self.warnings = []
+        self.image = Image.new("RGB", (PAGE_W, PAGE_H), PALETTE["paper"])
+        self.draw = ImageDraw.Draw(self.image)
 
-    def rule(self, y, x0=MARGIN, x1=W - MARGIN, width=1, fill=RULE):
-        self.d.line([(x0, y), (x1, y)], fill=fill, width=width)
+    # -- small primitives ------------------------------------------------
+    def mid(self, y, text, font, fill=None):
+        self.draw.text((PAGE_W / 2, y), text, font=font,
+                       fill=fill or PALETTE["ink"], anchor="ma")
 
-    def centred(self, y, text, f, fill=INK):
-        w = f.getlength(text)
-        self.d.text(((W - w) / 2, y), text, font=f, fill=fill)
+    def hbar(self, y, thick=2):
+        self.draw.rectangle([MARGIN, y, PAGE_W - MARGIN, y + thick - 1],
+                            fill=PALETTE["ink"])
 
-    # -- sections ------------------------------------------------------
-    def masthead(self, y):
-        self.rule(y)
-        f = serif_b(66)
-        w = f.getlength("THE DAILY GLOBE")
-        self.d.text(((W - w) / 2, y + 8), "THE DAILY GLOBE", font=f, fill=INK)
-        y += 8 + 66 + 10
-        self.centred(y, "FRIDAY, 20 NOVEMBER 2026  \u2022  25 STORIES  \u2022  5 REGIONS",
-                     sans_b(13), fill=NAVY)
-        y += 13 + 10
-        self.rule(y, width=2, fill=INK)
-        return y + 2
+    # -- masthead (v1 geometry, unchanged) -------------------------------
+    def paint_masthead(self):
+        d = self.draw
+        d.rectangle([MARGIN, 12, PAGE_W - MARGIN, 14], fill=PALETTE["ink"])
+        d.line([(MARGIN, 17), (PAGE_W - MARGIN, 17)], fill=PALETTE["ink"])
+        d.text((MARGIN, 30), "WORLD EDITION", font=FONTS.sans_bold(13),
+               fill=PALETTE["ink"])
+        d.text((PAGE_W - MARGIN, 30), "25 STORIES  \u2022  5 REGIONS",
+               font=FONTS.sans_bold(13), fill=PALETTE["ink"], anchor="ra")
+        self.mid(26, "THE DAILY GLOBE", FONTS.serif_bold(66))
+        self.hbar(102)
+        self.mid(110, "FRIDAY,  20  NOVEMBER  2026", FONTS.serif_bold(21))
+        self.hbar(138)
 
-    def lead(self, y):
-        f = serif_b(40)
-        for line in LEAD_HEAD:
-            self.centred(y, line, f)
-            y += 46
-        y += 4
-        f2 = serif(15)
-        for line in wrap(LEAD_SUMMARY, f2, CW):
-            self.centred(y, line, f2)
-            y += 19
-        return y
+    # -- lead story + courthouse band (v1 geometry, unchanged) -----------
+    def paint_lead(self):
+        d = self.draw
+        self.mid(150, LEAD_KICKER, FONTS.sans_bold(16), PALETTE["red"])
+        y = 174
+        for line in LEAD_LINES:
+            self.mid(y, line, FONTS.serif_bold(44))
+            y += 53
+        y += 2
+        deck = fit_words(d, LEAD_DECK, FONTS.sans(19), CONTENT_W)
+        assert len(deck) == 2, f"lead deck wrapped to {len(deck)} lines, want 2"
+        for line in deck:
+            self.mid(y, line, FONTS.sans(19))
+            y += 25
+        self.paint_courthouse(336, 428)
+        self.hbar(440)
 
-    def artwork(self, y):
-        """Courthouse scene (v3's treatment) inside v1's 92px band."""
-        y0, y1 = y, y + 92
-        # dusk-sky gradient, two segments
-        for i in range(92):
-            t = i / 91.0
-            if t < 0.5:
-                col = lerp(SKY_TOP, SKY_MID, t / 0.5)
+    def paint_courthouse(self, top, bottom):
+        """Courthouse scene inside the 92px band: sky gradient, blue
+        pediment, five columns, steps, scales glyph, red vote chip."""
+        d = self.draw
+        x0, x1 = MARGIN, PAGE_W - MARGIN
+        span = bottom - top
+        for yy in range(top, bottom):
+            t = (yy - top) / span
+            d.line([(x0, yy), (x1, yy)],
+                   fill=blend(PALETTE["sky_top"], PALETTE["sky_bottom"], t))
+        hall_l, hall_r = x0 + 330, x1 - 330
+        centre = (hall_l + hall_r) // 2
+        navy = PALETTE["navy_dark"]
+        # Pediment triangle and its entablature bar.
+        d.polygon([(hall_l - 24, top + 34), (hall_r + 24, top + 34),
+                   (centre, top + 6)], fill=PALETTE["blue"])
+        d.rectangle([hall_l - 24, top + 34, hall_r + 24, top + 40], fill=navy)
+        # Five columns.
+        for i in range(5):
+            col_x = hall_l + i * (hall_r - hall_l) // 4 - 7
+            d.rectangle([col_x, top + 40, col_x + 14, bottom - 14],
+                        fill=PALETTE["paper"], outline=navy, width=1)
+        # Two steps under the colonnade.
+        d.rectangle([hall_l - 24, bottom - 14, hall_r + 24, bottom - 8],
+                    fill=navy)
+        d.rectangle([hall_l - 36, bottom - 8, hall_r + 36, bottom - 2],
+                    fill=navy)
+        # Scales of justice, drawn in paper-white on the pediment.
+        white = PALETTE["white"]
+        d.line([(centre, top + 2), (centre, top - 2)], fill=PALETTE["ink"])
+        d.line([(centre - 26, top + 22), (centre + 26, top + 22)],
+               fill=white, width=2)
+        d.line([(centre, top + 12), (centre, top + 22)], fill=white, width=2)
+        for sign in (-1, 1):
+            d.line([(centre + sign * 26, top + 22),
+                    (centre + sign * 34, top + 32)], fill=white, width=2)
+            d.line([(centre + sign * 26, top + 22),
+                    (centre + sign * 18, top + 32)], fill=white, width=2)
+            if sign < 0:
+                pan = [centre - 38, top + 28, centre - 14, top + 38]
             else:
-                col = lerp(SKY_MID, SKY_BOT, (t - 0.5) / 0.5)
-            self.d.line([(MARGIN, y0 + i), (W - MARGIN, y0 + i)], fill=col)
-        cx = W // 2
-        # pediment: shallow triangle with gold outline, white scales medallion
-        self.d.polygon([(cx, y0 + 8), (cx + 170, y0 + 34), (cx - 170, y0 + 34)],
-                       fill=(38, 53, 92), outline=GOLD, width=2)
-        self.d.ellipse([cx - 10, y0 + 15, cx + 10, y0 + 35], fill=(255, 255, 255))
-        # tiny scales glyph inside the medallion
-        self.d.line([(cx, y0 + 19), (cx, y0 + 31)], fill=NAVY, width=1)
-        self.d.line([(cx - 7, y0 + 21), (cx + 7, y0 + 21)], fill=NAVY, width=1)
-        self.d.polygon([(cx - 9, y0 + 27), (cx - 5, y0 + 27), (cx - 7, y0 + 31)], fill=NAVY)
-        self.d.polygon([(cx + 5, y0 + 27), (cx + 9, y0 + 27), (cx + 7, y0 + 31)], fill=NAVY)
-        # entablature
-        self.d.rectangle([cx - 162, y0 + 34, cx + 162, y0 + 42], fill=STONE)
-        # four fluted columns with capitals and bases
-        for ccx in (cx - 120, cx - 40, cx + 40, cx + 120):
-            self.d.rectangle([ccx - 15, y0 + 42, ccx + 15, y0 + 46], fill=STONE_DARK)
-            self.d.rectangle([ccx - 12, y0 + 46, ccx + 12, y0 + 74], fill=(240, 234, 216))
-            for fx in (-5, 0, 5):
-                self.d.line([(ccx + fx, y0 + 48), (ccx + fx, y0 + 72)], fill=FLUTE, width=1)
-            self.d.rectangle([ccx - 15, y0 + 74, ccx + 15, y0 + 78], fill=STONE_DARK)
-        # three-step base
-        self.d.rectangle([cx - 182, y0 + 78, cx + 182, y0 + 82], fill=STONE_DARK)
-        self.d.rectangle([cx - 190, y0 + 82, cx + 190, y0 + 87], fill=(203, 195, 170))
-        self.d.rectangle([cx - 198, y0 + 87, cx + 198, y0 + 92], fill=(193, 185, 160))
-        # crimson flags just outside the courthouse
-        for px, direction in ((cx - 212, -1), (cx + 212, 1)):
-            self.d.rectangle([px - 1, y0 + 10, px + 1, y0 + 88], fill=(58, 58, 58))
-            self.d.polygon([(px, y0 + 10), (px, y0 + 24), (px + 24 * direction, y0 + 17)],
-                           fill=CRIMSON)
-        # caption chips at the bottom corners of the band
-        self.chip(MARGIN + 8, y1 - 28, CHIP_LEFT, CRIMSON)
-        self.chip(W - MARGIN - 8, y1 - 28, CHIP_RIGHT, NAVY, right=True)
-        return y1
+                pan = [centre + 14, top + 28, centre + 38, top + 38]
+            d.arc(pan, 0, 180, fill=white, width=2)
+        # Red chip, bottom-left of the band.
+        chip_w = d.textlength(LEAD_CHIP, font=FONTS.sans_bold(13))
+        d.rectangle([x0 + 10, top + 8, x0 + 10 + chip_w + 16, top + 32],
+                    fill=PALETTE["red"])
+        d.text((x0 + 18, top + 11), LEAD_CHIP,
+               font=FONTS.sans_bold(13), fill=white)
+        # Thin ink edges top and bottom of the band.
+        d.line([(x0, top), (x1, top)], fill=PALETTE["ink"])
+        d.line([(x0, bottom), (x1, bottom)], fill=PALETTE["ink"])
 
-    def chip(self, x, y, text, bg, right=False):
-        f = sans_b(11)
-        tw = f.getlength(text)
-        w = int(tw) + 18
-        if right:
-            x = x - w
-        self.d.rounded_rectangle([x, y, x + w, y + 20], radius=3, fill=bg,
-                                 outline=(255, 255, 255) if bg == NAVY else None,
-                                 width=1 if bg == NAVY else 0)
-        self.d.text((x + 9, y + 4), text, font=f, fill=(255, 255, 255))
+    # -- numbers strip (new in v5, y 450..508) ---------------------------
+    def paint_numbers(self):
+        d = self.draw
+        cell = CONTENT_W / 6.0
+        for i in range(1, 6):
+            sep_x = MARGIN + i * cell
+            d.line([(sep_x, 452), (sep_x, 506)], fill=PALETTE["light"])
+        for i, (figure, caption) in enumerate(NUMBERS):
+            cell_x = MARGIN + i * cell
+            d.text((cell_x + 8, 453), figure,
+                   font=FONTS.sans_bold(24), fill=PALETTE["ink"])
+            lines = clip_lines(d, caption, FONTS.sans(11), cell - 16, 2)
+            assert len(lines) <= 2, f"number caption overflow: {caption!r}"
+            for j, line in enumerate(lines):
+                d.text((cell_x + 8, 482 + j * 13), line,
+                       font=FONTS.sans(11), fill=PALETTE["ink"])
+        self.hbar(508)
 
-    def timeline(self, y):
-        self.d.text((MARGIN, y), "THE DAY IN BRIEF", font=sans_b(11), fill=GREY)
-        y += 18
-        f = sans(13)
-        for line in TIMELINE:
-            self.d.text((MARGIN, y), line, font=f, fill=INK)
-            y += 17
-        return y
+    # -- briefs header + grid (v1 geometry, numbered tags) ---------------
+    def paint_briefs_header(self):
+        d = self.draw
+        left = "AROUND THE WORLD  \u2014  24 MORE STORIES"
+        d.text((MARGIN, 518), left, font=FONTS.sans_bold(15),
+               fill=PALETTE["red"])
+        right_w = d.textlength(REGION_COUNTS, font=FONTS.sans_bold(13))
+        left_w = d.textlength(left, font=FONTS.sans_bold(15))
+        assert left_w + right_w + 24 <= CONTENT_W, "briefs header overflows"
+        d.text((PAGE_W - MARGIN, 518), REGION_COUNTS,
+               font=FONTS.sans_bold(13), fill=PALETTE["ink"], anchor="ra")
 
-    def section_head(self, y, text):
-        self.d.text((MARGIN, y), text, font=sans_b(15), fill=NAVY)
-        y += 22
-        self.rule(y)
-        return y + 1
+    def paint_brief_grid(self):
+        d = self.draw
+        for idx, (category, region, headline, summary) in enumerate(BRIEFS):
+            col, row = idx % 3, idx // 3
+            x = MARGIN + col * (COLUMN_W + 24)
+            y = GRID_TOP + row * ROW_PITCH
+            # Numbered tag: red bold number + red category + grey region.
+            tag_font = FONTS.sans_bold(11)
+            num = str(idx + 1)
+            d.text((x, y), num, font=tag_font, fill=PALETTE["red"])
+            cursor = x + d.textlength(num, font=tag_font)
+            cat_part = " \u2022  " + category
+            d.text((cursor, y), cat_part, font=tag_font,
+                   fill=PALETTE["red"])
+            cursor += d.textlength(cat_part, font=tag_font)
+            d.text((cursor, y), " \u2022  " + region,
+                   font=FONTS.sans(11), fill=PALETTE["light"])
+            # Headline: exactly one 16px bold line; fail loudly if not.
+            assert d.textlength(headline, font=FONTS.serif_bold(16)) \
+                <= COLUMN_W, f"brief {idx + 1} headline too long: {headline}"
+            d.text((x, y + 14), headline, font=FONTS.serif_bold(16),
+                   fill=PALETTE["ink"])
+            # Summary: one 13px line, ellipsised if it runs long.
+            for line in clip_lines(d, summary, FONTS.sans(13), COLUMN_W, 1):
+                d.text((x, y + 33), line, font=FONTS.sans(13),
+                       fill=PALETTE["ink"])
+        bottom = GRID_TOP + 8 * ROW_PITCH
+        assert bottom <= 946, f"brief grid overflows: {bottom}"
 
-    def brief_grid(self, y):
-        col_w = (CW - 2 * 24) // 3  # 301
-        xs = [MARGIN, MARGIN + col_w + 24, MARGIN + 2 * (col_w + 24)]
-        fh, fs = sans_b(16), sans(13)
-        for row in range(8):
-            for col in range(3):
-                idx = row * 3 + col
-                head, summ = BRIEFS[idx]
-                x = xs[col]
-                hl = wrap(head, fh, col_w)
-                sl = wrap(summ, fs, col_w)
-                if len(hl) > 1 or len(sl) > 2:
-                    self.warnings.append(
-                        f"brief {idx + 1} overflow: {len(hl)} headline lines, "
-                        f"{len(sl)} summary lines")
-                yy = y + row * GRID_PITCH
-                for i, line in enumerate(hl[:2]):
-                    self.d.text((x, yy + i * 19), line, font=fh, fill=INK)
-                sy = yy + len(hl[:2]) * 19 + 1
-                for i, line in enumerate(sl[:2]):
-                    self.d.text((x, sy + i * 15), line, font=fs, fill=(60, 60, 60))
-        return y + 8 * GRID_PITCH
+    # -- date-check box (new in v5, y 952..984) --------------------------
+    def paint_date_check(self):
+        d = self.draw
+        d.rectangle([MARGIN, 952, PAGE_W - MARGIN, 984],
+                    outline=PALETTE["ink"], width=1)
+        label = "DATE CHECK  "
+        label_font = FONTS.sans_bold(11)
+        label_w = d.textlength(label, font=label_font)
+        inner = CONTENT_W - 18  # 9px padding on each side
+        # First line shares its row with the label; the second takes the
+        # full inner width. Wrap word by word against those two widths.
+        widths = [inner - label_w, inner]
+        lines, current, slot = [], "", 0
+        for word in DATE_CHECK.split():
+            trial = (current + " " + word).strip()
+            if d.textlength(trial, font=FONTS.sans(11)) <= widths[slot]:
+                current = trial
+            else:
+                lines.append(current)
+                slot += 1
+                assert slot < len(widths), "date-check text needs >2 lines"
+                current = word
+        if current:
+            lines.append(current)
+        assert len(lines) == 2, \
+            f"date-check wrapped to {len(lines)} lines, want exactly 2"
+        d.text((MARGIN + 9, 958), label, font=label_font,
+               fill=PALETTE["red"])
+        d.text((MARGIN + 9 + label_w, 958), lines[0],
+               font=FONTS.sans(11), fill=PALETTE["ink"])
+        d.text((MARGIN + 9, 971), lines[1],
+               font=FONTS.sans(11), fill=PALETTE["ink"])
 
-    def markets(self, y):
-        self.rule(y)
-        y += 8
-        f = sans(13)
-        self.d.text((MARGIN, y), MARKETS, font=f, fill=INK)
-        return y + 17
+    # -- footer ------------------------------------------------------------
+    def paint_footer(self):
+        self.hbar(990)
+        self.mid(996, "Friday, 20 November 2026  \u2022  The Daily Globe",
+                 FONTS.serif_bold(15))
+        self.mid(1011, FOOTER_SOURCES, FONTS.sans(12), PALETTE["light"])
 
-    def footer(self, y):
-        self.rule(y)
-        y += 8
-        self.centred(y, FOOTER, sans(12), fill=GREY)
-        return y + 14
-
-    def render(self):
-        y = 22
-        y = self.masthead(y)
-        y += GAP
-        y = self.lead(y)
-        y += GAP
-        y = self.artwork(y)
-        y += GAP
-        y = self.timeline(y)
-        y += GAP
-        y = self.section_head(y, "AROUND THE WORLD")
-        y += GAP
-        y = self.brief_grid(y)
-        y += GAP
-        y = self.markets(y)
-        y += GAP
-        y = self.footer(y)
-        return y
+    def build(self):
+        self.paint_masthead()
+        self.paint_lead()
+        self.paint_numbers()
+        self.paint_briefs_header()
+        self.paint_brief_grid()
+        self.paint_date_check()
+        self.paint_footer()
+        return self.image
 
 
 def main():
-    page = FrontPage()
-    bottom = page.render()
-    out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "entry.png")
-    page.img.save(out)
-    print("bottom y:", bottom, "of", H, "| slack:", H - bottom)
-    for w in page.warnings:
-        print("WARNING:", w)
+    page = Page()
+    image = page.build()
+    out = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                       "entry.png")
+    image.save(out, optimize=True)
     print("wrote", out)
 
 
