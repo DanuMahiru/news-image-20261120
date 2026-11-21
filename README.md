@@ -10,13 +10,26 @@ on make.fun.
 
 ## The page
 
-"The Daily Globe", Friday 20 November 2026: 25 stories in a roomy
-front-page layout — a 66px masthead, the ICJ's genocide verdict against
-Myanmar as the lead with a courthouse scene, a six-cell numbers strip
-(9–6 vote, Kyiv missiles, S&P 500, Anthropic, Senate vote, Denmark),
-region counts in the briefs header, numbered briefs, a date-check box,
-and 24 briefs in a three-column grid. All stories and figures are
-verified 20 November 2026 reporting; nothing is invented.
+"The Daily Globe", Friday 20 November 2026 — rebuilt on the
+top-leaderboard winners' formula: 35 numbered stories in a dense
+front-page layout — a giant date masthead ("Friday 20 November 2026"),
+a six-cell numbers strip (3 Kyiv bridges, 370,000 evacuated, Taiex
+−6.2%, 100,000 youth visas, Japan CPI 2.3%, Phillips 118), a region
+bar with per-region counts (Europe 15, Asia 8, Mideast 2, Africa 2,
+Americas 4, Oceania 2, World 2), 3 large illustrated leads and 10
+illustrated secondaries, a dotted world map with numbered pins, a
+numbered "ALSO ON FRIDAY" list of 22 more stories, a date-check box,
+and per-story source attribution.
+
+The lead is Friday-first: Russian missiles hitting three Kyiv bridges.
+The ICJ's genocide verdict against Myanmar is Thursday-first news, so
+it is NOT the lead — only its Friday reaction (Myanmar's rulers
+rejecting the ruling) appears, as secondary 13. The date-check box
+names everything left out for being first reported before Friday
+(ICJ verdict itself, Trump–Xi–Putin summit, Anthropic IPO debut,
+Senate Iran vote, Bukele filing, Kerch Bridge strikes, GTA VI launch,
+Van Gogh sale). All stories and figures are verified 20 November 2026
+reporting; nothing is invented.
 
 ## How it is built
 
